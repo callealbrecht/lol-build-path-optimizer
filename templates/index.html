@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LoL Build Path Recommender</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 12px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    label { display:block; font-size: 12px; margin-bottom: 6px; opacity: 0.8; }
+    input, select { padding: 10px; min-width: 240px; }
+    button { padding: 10px 14px; cursor: pointer; }
+    pre { background: #f6f6f6; padding: 12px; overflow:auto; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin-top: 14px; }
+    .small { font-size: 12px; opacity: 0.8; }
+    ul { margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h2>LoL Optimal Build Path (Emerald+)</h2>
+  <p class="small">Uses your collected Riot API match data + timeline extraction (first 3 completed items), baseline + matchup fallbacks + teamcomp heuristics.</p>
+
+  <datalist id="champions">
+    {% for c in champ_names %}
+      <option value="{{ c }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Patch</label>
+        <input id="patch" placeholder="{{ default_patch }}" />
+      </div>
+      <div>
+        <label>Role</label>
+        <select id="role">
+          <option value="TOP">TOP</option>
+          <option value="JUNGLE" selected>JUNGLE</option>
+          <option value="MIDDLE">MIDDLE</option>
+          <option value="BOTTOM">BOTTOM</option>
+          <option value="UTILITY">UTILITY</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <div>
+        <label>Your Champion</label>
+        <input id="champion" list="champions" placeholder="Rengar" />
+      </div>
+      <div>
+        <label>Lane Opponent (optional)</label>
+        <input id="opponent" list="champions" placeholder="Lee Sin" />
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+    <label>Enemy Team (5 champions)</label>
+    <div class="row">
+        <input id="enemy1" list="champions" placeholder="Enemy 1" />
+        <input id="enemy2" list="champions" placeholder="Enemy 2" />
+        <input id="enemy3" list="champions" placeholder="Enemy 3" />
+        <input id="enemy4" list="champions" placeholder="Enemy 4" />
+        <input id="enemy5" list="champions" placeholder="Enemy 5" />
+    </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <button onclick="run()">Recommend</button>
+    </div>
+  </div>
+
+  <div id="out" class="card" style="display:none;"></div>
+
+  <script>
+    async function run() {
+      const patch = document.getElementById("patch").value.trim();
+      const role = document.getElementById("role").value;
+      const champion = document.getElementById("champion").value.trim();
+      const opponent = document.getElementById("opponent").value.trim();
+     const enemies = [
+        document.getElementById("enemy1").value.trim(),
+        document.getElementById("enemy2").value.trim(),
+        document.getElementById("enemy3").value.trim(),
+        document.getElementById("enemy4").value.trim(),
+        document.getElementById("enemy5").value.trim(),
+    ].filter(Boolean);
+
+const payload = {
+  patch: patch || null,
+  role,
+  champion,
+  opponent,
+  enemies
+};
+
+      const res = await fetch("/api/recommend", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      const out = document.getElementById("out");
+      out.style.display = "block";
+
+      if (!res.ok) {
+        out.innerHTML = "<b>Error:</b> " + (data.error || "Unknown error");
+        return;
+      }
+
+      const path = data.path || [];
+      const situational = data.situational || [];
+      const teamReasons = data.teamcomp_reasons || [];
+
+      let html = "";
+      html += `<h3>${data.champion} (${data.role}) vs ${data.opponent} — Patch ${data.patch}</h3>`;
+
+      html += "<h4>Build Path (first 3 completed items)</h4><ul>";
+      for (const p of path) {
+        html += `<li><b>Step ${p.step}:</b> ${p.item || "(none)"} <span class="small">[${p.reason}]</span></li>`;
+      }
+      html += "</ul>";
+
+      html += "<h4>Situational (teamcomp)</h4>";
+      if (situational.length) {
+        html += "<ul>" + situational.map(s => `<li>${s}</li>`).join("") + "</ul>";
+      } else {
+        html += "<div class='small'>No strong counters detected.</div>";
+      }
+
+      if (teamReasons.length) {
+        html += "<h4>Why (teamcomp)</h4><ul>";
+        html += teamReasons.map(r => `<li>${r}</li>`).join("");
+        html += "</ul>";
+      }
+
+      html += "<details style='margin-top:10px;'><summary>Raw JSON</summary><pre>" + JSON.stringify(data, null, 2) + "</pre></details>";
+
+      out.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
